@@ -6,11 +6,13 @@ import random
 import time
 import logging
 
+## log the problem encountered into log file. 
 logging.basicConfig(filename = 'curiosity.log', level=logging.INFO,
                     format='%(asctime)s:%(message)s')
 
 
 def decision():
+    ## decide whether a solution works (40% chance of success).
     global solved
     probability = ["SUCCESS", "SUCCESS","FAIL","FAIL","FAIL"]
     #probability = ["SUCCESS"]
@@ -20,6 +22,10 @@ def decision():
     return solved
 
 def vectoring(cv, problem):
+    ## vector forwards if:
+    ## (a)there is no problem,
+    ## (b)after changing direction(rotate) to see if new direction works, or
+    ## (c)after deflating wheels to see if loose sand can now be traversed over. 
     global solved
     global wheel_Lifted
     cv.acquire()
@@ -30,12 +36,14 @@ def vectoring(cv, problem):
             print("VECTORING...\n")
         if rotated==True:
             print("VECTORING...")
+            ## check if changing direction works
             decision()
             if solved == "SUCCESS":
                 solution = "Reverse --> New Direction --> Vector"
     if (solved=="FAIL" and problem == "Loose Sand"):
         if deflated_Wheels == True:
             print("VECTORING...\n")
+            ## check if Loose Sand problem has been overcome
             decision()
             if solved == "SUCCESS":
                 solution = "Deflate Wheels --> Vector --> Inflate Wheels"
@@ -46,6 +54,7 @@ def vectoring(cv, problem):
     
 
 def lift_Wheel(cv,problem):
+    ## lift a wheel of the rover
     global wheel_Lifted
     cv.acquire()
     if problem =="Rock" and solved== "FAIL": 
@@ -56,13 +65,16 @@ def lift_Wheel(cv,problem):
     return wheel_Lifted
 
 def lower_Wheel(cv,problem):
+    ## lower lifted wheel
     solution = "Lift wheel --> Vector --> Lower Wheel"
     global wheel_Lifted
     cv.acquire()
     if problem =="Rock" and solved== "FAIL" and wheel_Lifted==True: 
         print("LOWERING WHEEL\n")
         wheel_Lifted=False
+        ## check if Rock problem has been overcome
         decision()
+        ## if overcome, log the problem and solution
         if solved == "SUCCESS":
             logging.info('>> ERROR: {} \\ SOLUTION: {} \\ {}'.format(problem, solution, solved))
     cv.notifyAll()
@@ -70,6 +82,8 @@ def lower_Wheel(cv,problem):
     return wheel_Lifted
 
 def reverse(cv, problem):
+    ## reverse rover to ready it either for a new direction (Rock) or
+    ## to deflate wheels (Loose Sand)
     global reverse_d
     cv.acquire()
     if (problem =="Rock" or problem=="Loose Sand")and solved== "FAIL":
@@ -81,6 +95,7 @@ def reverse(cv, problem):
 
 
 def change_Direction(cv, problem):
+    ## change direction of Rover to try to avoid the Rock
     global rotated
     cv.acquire()
     if problem =="Rock" and solved== "FAIL":
@@ -92,20 +107,24 @@ def change_Direction(cv, problem):
 
 
 def requestingHelp(cv,problem):
+    ## if the rover is unable to overcome the problem then request help from headquarters.
     cv.acquire()
     if (problem =="Rock" or problem=="Loose Sand" or problem=="Rough Terrain") and solved== "FAIL":
         print("Requesting help from headquarters...")
         decision()
         if solved == "SUCCESS":
-                solution = "Received instructions from headquarters"
-                logging.info('>> ERROR: {} \\ SOLUTION: {} \\ {}'.format(problem, solution, solved))
+            ## The help received from headquarters was successful! Log this solution. 
+            solution = "Received instructions from headquarters"
+            logging.info('>> ERROR: {} \\ SOLUTION: {} \\ {}'.format(problem, solution, solved))
         else:
+            ## The help received wasn't enough to overcome the problem. Log mission fail.
             mission_fail = "No solution -- Mission Failure"
             logging.info('>> ERROR: {} \\ SOLUTION: {} \\ {}'.format(problem, mission_fail, solved))
     cv.notifyAll()
     cv.release()
 
 def deflate_Wheels(cv,problem):
+    ## deflate wheels, readying the rover for traversing over loose sand
     global deflated_Wheels
     cv.acquire()
     if (problem=="Loose Sand") and solved== "FAIL":
@@ -115,6 +134,7 @@ def deflate_Wheels(cv,problem):
     return deflated_Wheels
 
 def inflate_Wheels(cv,problem):
+    ## re-inflate the wheels of the rover
     global deflated_Wheels
     cv.acquire()
     if (problem=="Loose Sand") and solved== "FAIL":
@@ -124,6 +144,8 @@ def inflate_Wheels(cv,problem):
     return deflated_Wheels
 
 def Three_point_turn(cv, problem):
+    ## Turn rover to face backwards. Apparently traversing backwards over rough terrain
+    ## causes less damage to a vehicle!
     global facing_forward
     cv.acquire()
     if (problem=="Rough Terrain") and solved== "FAIL":
@@ -133,6 +155,7 @@ def Three_point_turn(cv, problem):
     return facing_forward
 
 def traversing_backwards(cv, problem):
+    ## Traverse backwards over rough terrain
     global facing_forward
     cv.acquire()
     if (problem=="Rough Terrain") and solved== "FAIL" and facing_forward==False:
@@ -140,33 +163,32 @@ def traversing_backwards(cv, problem):
     cv.release()
 
 def reorienting(cv,problem):
+    ## Face forwards again after traversing over rough terrain. 
     global facing_forward
     cv.acquire()
     if (problem=="Rough Terrain") and solved== "FAIL" and facing_forward==False:
         print("Reorienting to face forwards")
         facing_forward = True
+        ## Check if Rough Terrain problem has been overcome.
         decision()
         if solved == "SUCCESS":
-                solution = "3-point-turn --> Traversed backwards over rough terrain --> Reoriented to face forward"
-                logging.info('>> ERROR: {} \\ SOLUTION: {} \\ {}'.format(problem, solution, solved))
+            ## log the problem and solution 
+            solution = "3-point-turn --> Traversed backwards over rough terrain --> Reoriented to face forward"
+            logging.info('>> ERROR: {} \\ SOLUTION: {} \\ {}'.format(problem, solution, solved))
     cv.release()
     return facing_forward
-    
-    
 
-        
+
+## list of problems which the rover could encounter
 problist =["Rock", "Loose Sand", "Rough Terrain", "None"]
-#problist =["Rock"]
-#problist =["Rock","Loose Sand"]
-#problist =["Rough Terrain"]
-#problist =["None"]
-#problist =["Loose Sand"]
 
+## Pass lock to thread to enable execution of a sequence of  actions
 lock = Lock()
 cv = threading.Condition(lock)
 
 probNumber=0
 
+## The rover encounters exactly 5 problems.
 while probNumber<5:
     wheel_Lifted = False
     reverse_d = False
@@ -179,7 +201,7 @@ while probNumber<5:
     print("\nProblem encountered: ", problem)
     print(".........................")
 
-
+    ## Create threads, where each thread can only carry out one action.
     t1 = threading.Thread(target = lift_Wheel, args=(cv,problem))
     t2 = threading.Thread(target = vectoring, args=(cv,problem))
     t3 = threading.Thread(target = lower_Wheel, args=(cv,problem))
@@ -192,7 +214,8 @@ while probNumber<5:
     t10 = threading.Thread(target = traversing_backwards, args=(cv,problem))
     t11 = threading.Thread(target = reorienting, args=(cv,problem))
     t12 = threading.Thread(target = requestingHelp, args=(cv,problem))
-    
+
+    ## start running threads 
     t1.start()
     t2.start()
     t3.start()
@@ -208,6 +231,7 @@ while probNumber<5:
     
    
     time.sleep(3)
+    ## only increment probNumber if a problem was encountered.
     if problem != "None":
         probNumber=probNumber+1
     
